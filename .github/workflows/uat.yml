@@ -10,7 +10,7 @@ jobs:
         runs-on: ubuntu-latest
         env:
             working_directory: ./Events
-            systemctl_service_name:  EvenetsBackend
+            systemctl_service_name:  EventsBackend
 
             message: |
               [${{ github.event.head_commit.committer.name }}](https://github.com/${{github.event.head_commit.committer.username}}) pushed new commit: 
@@ -48,7 +48,7 @@ jobs:
               username: root
               password: ".ZL?i*-dtBSL8S"
               source: "deploy/*"
-              target: "/var/www/groupA/events/backend"
+              target: "/var/www/myt/api"
               overwrite: true
               rm: false
             
@@ -68,7 +68,7 @@ jobs:
               username: root
               password: ".ZL?i*-dtBSL8S"
               script: |
-                chmod -R 777 /var/www/groupA
+                chmod -R 777 /var/www/myt/api
 
           - name: send notification to telegram
             uses: appleboy/telegram-action@master
