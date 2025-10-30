@@ -1,0 +1,80 @@
+name: Deploy Events-Backend UAT Service
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        env:
+            working_directory: ./Events
+            systemctl_service_name:  EvenetsBackend
+
+            message: |
+              [${{ github.event.head_commit.committer.name }}](https://github.com/${{github.event.head_commit.committer.username}}) pushed new commit: 
+              `[ ${{github.event.head_commit.message}} ]` 
+              to [${{ github.event.repository.name }}](https://github.com/${{github.event.repository.html_url}}) 
+              You can now use it at http://myt-api.pomelo-bot.xyz/swagger/index.html
+        steps:
+          - uses: actions/checkout@v2
+          - name: Setup .NET Core SDK
+            uses: actions/setup-dotnet@v2.1.0
+            with:
+              dotnet-version: "8.0.x"
+              include-prerelease: false
+
+          - name: Build
+            run: dotnet build -c Release 
+
+          - name: Publish
+            run: dotnet publish -c Release -o deploy 
+
+          - name: stop dotnet services
+            uses: garygrossgarten/github-action-ssh@release
+            with:
+                command: sudo systemctl stop ${{ env.systemctl_service_name }}
+                host: "159.223.208.141"
+                port: 22
+                username: root
+                password: ".ZL?i*-dtBSL8S"
+            
+          - name: copy via ssh
+            uses: appleboy/scp-action@master
+            with:
+              host: "159.223.208.141"
+              port: 22
+              username: root
+              password: ".ZL?i*-dtBSL8S"
+              source: "deploy/*"
+              target: "/var/www/groupA/events/backend"
+              overwrite: true
+              rm: false
+            
+          - name: start dotnet services
+            uses: garygrossgarten/github-action-ssh@release
+            with:
+              command: sudo systemctl start --no-block ${{ env.systemctl_service_name }}
+              host: "159.223.208.141"
+              port: 22
+              username: root
+              password: ".ZL?i*-dtBSL8S"
+          - name: Give permission to the folder
+            uses: appleboy/ssh-action@v0.1.5
+            with:
+              host: "159.223.208.141"
+              port: 22
+              username: root
+              password: ".ZL?i*-dtBSL8S"
+              script: |
+                chmod -R 777 /var/www/groupA
+
+          - name: send notification to telegram
+            uses: appleboy/telegram-action@master
+            with:
+                to: 872819018
+                token: 1798483416:AAEPm2r9l6rdhHyeeovRAiL2db5sKigLNKo
+                message: ${{ env.message }}
+                format: markdown
+                disable_web_page_preview: true
