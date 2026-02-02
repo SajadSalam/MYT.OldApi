@@ -1,6 +1,6 @@
 using Events.DATA.DTOs;
 using Events.DATA.DTOs.Book;
-using Events.DATA.DTOs.Sadid;
+using Events.DATA.DTOs.Payment;
 using Events.Entities;
 using Events.Entities.Book;
 using Events.Services;
@@ -34,7 +34,7 @@ public class BookController : BaseController
     public async Task<IActionResult> GetBookAsync(Guid id) => Ok(await _bookService.GetBookAsync(id));
     
     [HttpPost("pay")]
-    public async Task<IActionResult> Pay([FromBody] PayBillResponse billResponse) => Ok(await _bookService.Pay(billResponse));
+    public async Task<IActionResult> Pay([FromBody] PayBillRequest billResponse) => Ok(await _bookService.Pay(billResponse));
   
     
 }

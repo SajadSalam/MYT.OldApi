@@ -1,0 +1,108 @@
+# Migration: Replace Sadid and Stripe with Amwal
+
+## Description
+This migration updates all existing payment records from Sadid (0) and Stripe (1) to Amwal (0).
+It also adds historical tracking in the PaymentMetadata field for audit purposes.
+
+## SQL Commands
+
+### Step 1: Update all Sadid payments (PaymentProvider = 0) with historical metadata
+```sql
+UPDATE "Bills" 
+SET "PaymentMetadata" = 
+    CASE 
+        WHEN "PaymentMetadata" IS NULL OR "PaymentMetadata" = '' 
+        THEN '{"original_provider":"Sadid","migrated_at":"' || NOW() || '"}'
+        ELSE "PaymentMetadata"
+    END
+WHERE "PaymentProvider" = 0 AND ("PaymentMetadata" IS NULL OR "PaymentMetadata" NOT LIKE '%original_provider%');
+```
+
+### Step 2: Update all Stripe payments (PaymentProvider = 1) to Amwal (0) with historical metadata
+```sql
+UPDATE "Bills" 
+SET "PaymentProvider" = 0,
+    "PaymentMetadata" = 
+        CASE 
+            WHEN "PaymentMetadata" IS NULL OR "PaymentMetadata" = '' 
+            THEN '{"original_provider":"Stripe","migrated_at":"' || NOW() || '"}'
+            ELSE "PaymentMetadata"
+        END
+WHERE "PaymentProvider" = 1;
+```
+
+### Step 3: Update any PayPal payments (PaymentProvider = 2) to Amwal (0) with historical metadata
+```sql
+UPDATE "Bills" 
+SET "PaymentProvider" = 0,
+    "PaymentMetadata" = 
+        CASE 
+            WHEN "PaymentMetadata" IS NULL OR "PaymentMetadata" = '' 
+            THEN '{"original_provider":"PayPal","migrated_at":"' || NOW() || '"}'
+            ELSE "PaymentMetadata"
+        END
+WHERE "PaymentProvider" = 2;
+```
+
+## Entity Framework Core Commands
+
+If you prefer to use EF Core migrations:
+
+```bash
+# Navigate to the Events project directory
+cd Events
+
+# Create a new migration
+dotnet ef migrations add ReplaceProvidersWithAmwal
+
+# Review the generated migration file before applying
+
+# Apply the migration to update the database
+dotnet ef database update
+```
+
+## Verification Queries
+
+After running the migration, verify the changes:
+
+```sql
+-- Count bills by provider (should only see Amwal=0 and Cash=3)
+SELECT "PaymentProvider", COUNT(*) as Count 
+FROM "Bills" 
+GROUP BY "PaymentProvider";
+
+-- View migrated bills with metadata
+SELECT "BillId", "PaymentProvider", "PaymentMetadata" 
+FROM "Bills" 
+WHERE "PaymentMetadata" LIKE '%original_provider%' 
+LIMIT 10;
+```
+
+## Rollback (if needed)
+
+To rollback the migration (restore from metadata):
+
+```sql
+-- Restore Sadid payments
+UPDATE "Bills" 
+SET "PaymentProvider" = 0
+WHERE "PaymentMetadata" LIKE '%"original_provider":"Sadid"%';
+
+-- Restore Stripe payments  
+UPDATE "Bills" 
+SET "PaymentProvider" = 1
+WHERE "PaymentMetadata" LIKE '%"original_provider":"Stripe"%';
+
+-- Restore PayPal payments
+UPDATE "Bills" 
+SET "PaymentProvider" = 2
+WHERE "PaymentMetadata" LIKE '%"original_provider":"PayPal"%';
+```
+
+## Notes
+
+- This migration is safe to run multiple times (idempotent)
+- Historical provider information is preserved in PaymentMetadata
+- All existing payment records will be visible as Amwal payments
+- Cash payments (PaymentProvider = 3) are not affected
+- After migration, the system will only accept Amwal and Cash as valid payment providers

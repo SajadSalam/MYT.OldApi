@@ -5,11 +5,13 @@ using Events.DATA.DTOs;
 using Events.DATA.DTOs.Book;
 using Events.DATA.DTOs.Category;
 using Events.DATA.DTOs.Event;
-using Events.DATA.DTOs.Sadid;
+using Events.DATA.DTOs.Payment;
 using Events.Entities;
 using Events.Entities.Book;
 using Events.Entities.Ticket;
+using Events.Services.Payment;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using SeatsioDotNet.Events;
 
 namespace Events.Services;
@@ -25,7 +27,7 @@ public interface IBookService
     // get by id 
     Task<(BookDto? book, string? error)> GetBookAsync(Guid id);
 
-    Task<(bool seccess, string? error)> Pay(PayBillResponse billResponse);
+    Task<(bool seccess, string? error)> Pay(PayBillRequest billResponse);
 }
 
 public class BookService : IBookService
@@ -37,18 +39,18 @@ public class BookService : IBookService
     private readonly ITicketService _ticketService;
 
     private readonly IMapper _mapper;
-    private readonly ISadidService _sadidService;
+    private readonly IPaymentGatewayFactory _paymentGatewayFactory;
 
     private readonly string _secretKey;
 
     public BookService(ISeatIoService seatIoService, DataContext context, ITicketService ticketService, IMapper mapper,
-        IConfiguration configuration, ISadidService sadidService)
+        IConfiguration configuration, IPaymentGatewayFactory paymentGatewayFactory)
     {
         _seatIoService = seatIoService;
         _context = context;
         _ticketService = ticketService;
         _mapper = mapper;
-        _sadidService = sadidService;
+        _paymentGatewayFactory = paymentGatewayFactory;
         _secretKey = configuration["sadid:ticket_key"];
     }
 
@@ -213,25 +215,55 @@ public class BookService : IBookService
             var result = await _context.Books.AddAsync(book);
             if (result == null!) return (null, "Some thing went wrong");
 
-            var sadid = await _sadidService.CreateBillAsync(new CreateBillForm
+            // Determine which payment provider to use
+            var paymentProvider = objectForm.PreferredPaymentMethod ?? PaymentProvider.Amwal;
+            
+            // Check if provider is available
+            if (!_paymentGatewayFactory.IsProviderAvailable(paymentProvider))
             {
-                CustomerPhone = newObjects.First().PhoneNumber,
+                return (null, $"Payment provider {paymentProvider} is not available");
+            }
+
+            // Get the appropriate payment gateway
+            var paymentGateway = _paymentGatewayFactory.GetGateway(paymentProvider);
+
+            // Create payment request
+            var paymentRequest = new PaymentRequest
+            {
+                Amount = newObjects.Sum(x => x.Price) - objectForm.Discount,
                 CustomerName = newObjects.First().FullName,
+                CustomerPhone = newObjects.First().PhoneNumber,
+                BookId = bookId,
+                EventId = eventId,
                 ExpireDate = eventEntity.EndEvent,
-                Amount = newObjects.Sum(x => x.Price),
-            });
+                RedirectUrl = "https://events-api.future-wave.co/api/book/pay"
+            };
+
+            // Create payment through the gateway
+            var paymentResponse = await paymentGateway.CreatePaymentAsync(paymentRequest);
+            
             Bill? bill = null;
-            if (sadid.isSuccess)
+            if (paymentResponse.IsSuccess)
             {
                 var billsaved = await _context.Bills.AddAsync(new Bill
                 {
-                    BillId = sadid.id,
+                    BillId = paymentResponse.PaymentId,
                     BookId = bookId,
                     Book = book,
                     PaymentStatus = PaymentStatus.NotPaid,
-                    TotalPrice = newObjects.Sum(x => x.Price)
+                    TotalPrice = newObjects.Sum(x => x.Price) - objectForm.Discount,
+                    PaymentProvider = paymentProvider,
+                    PaymentProviderId = paymentResponse.PaymentId,
+                    PaymentMetadata = paymentResponse.AdditionalData != null 
+                        ? JsonConvert.SerializeObject(paymentResponse.AdditionalData) 
+                        : null
                 });
                 bill = billsaved.Entity;
+            }
+            else
+            {
+                await transaction.RollbackAsync();
+                return (null, $"Payment creation failed: {paymentResponse.Error}");
             }
 
 
@@ -240,12 +272,12 @@ public class BookService : IBookService
             if (user.Role == UserRole.PointOfSale)
             {
                 if (bill == null)
-                    return (null, "sadid not Success");
+                    return (null, "Payment creation not successful");
 
-                var PayBillResponse = await Pay(new PayBillResponse { BillId = bill.BillId, SecretKey = _secretKey });
+                var payResult = await Pay(new PayBillRequest { BillId = bill.BillId, SecretKey = _secretKey });
 
-                if (PayBillResponse.error != null)
-                    return (null, $"Error From Pay To Sale Point : {PayBillResponse.error}");
+                if (payResult.error != null)
+                    return (null, $"Error From Pay To Sale Point : {payResult.error}");
             }
 
             var resultBook = new BookDto
@@ -344,7 +376,7 @@ public class BookService : IBookService
     }
 
 
-    public async Task<(bool seccess, string? error)> Pay(PayBillResponse billResponse)
+    public async Task<(bool seccess, string? error)> Pay(PayBillRequest billResponse)
     {
         if (billResponse.SecretKey != _secretKey) return (false, "Secret key is not valid");
 
@@ -352,6 +384,25 @@ public class BookService : IBookService
         var bill = await _context.Bills.AsNoTracking()
             .FirstOrDefaultAsync(x => x.BillId == billResponse.BillId);
         if (bill == null) return (false, "not found");
+
+        // Get the payment provider for this bill
+        var paymentProvider = bill.PaymentProvider ?? PaymentProvider.Amwal;
+        
+        try
+        {
+            // Get the appropriate payment gateway and confirm payment
+            var paymentGateway = _paymentGatewayFactory.GetGateway(paymentProvider);
+            var confirmResult = await paymentGateway.ConfirmPaymentAsync(bill.BillId, _secretKey);
+            
+            if (!confirmResult.IsSuccess)
+            {
+                return (false, $"Payment confirmation failed: {confirmResult.Error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Payment gateway error: {ex.Message}");
+        }
 
         // Retrieve bookObjects with AsNoTracking to prevent tracking issues
         var bookObjects = await _context.BookObjects.AsNoTracking().Include(x => x.Book)

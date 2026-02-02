@@ -35,18 +35,18 @@ jobs:
             uses: garygrossgarten/github-action-ssh@release
             with:
                 command: sudo systemctl stop ${{ env.systemctl_service_name }}
-                host: "159.223.208.141"
+                host: "209.38.46.123"
                 port: 22
                 username: root
-                password: ".ZL?i*-dtBSL8S"
+                password: "123456"
             
           - name: copy via ssh
             uses: appleboy/scp-action@master
             with:
-              host: "159.223.208.141"
+              host: "209.38.46.123"
               port: 22
               username: root
-              password: ".ZL?i*-dtBSL8S"
+              password: "123456"
               source: "deploy/*"
               target: "/var/www/myt/api"
               overwrite: true
@@ -56,17 +56,17 @@ jobs:
             uses: garygrossgarten/github-action-ssh@release
             with:
               command: sudo systemctl start --no-block ${{ env.systemctl_service_name }}
-              host: "159.223.208.141"
+              host: "209.38.46.123"
               port: 22
               username: root
-              password: ".ZL?i*-dtBSL8S"
+              password: "123456"
           - name: Give permission to the folder
             uses: appleboy/ssh-action@v0.1.5
             with:
-              host: "159.223.208.141"
+              host: "209.38.46.123"
               port: 22
               username: root
-              password: ".ZL?i*-dtBSL8S"
+              password: "123456"
               script: |
                 chmod -R 777 /var/www/myt/api
 

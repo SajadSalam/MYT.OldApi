@@ -1,0 +1,38 @@
+# Database Migration Required
+
+## Changes to Bill Entity
+
+The following fields have been added to the Bill entity:
+
+1. **PaymentProvider** (nullable PaymentProvider enum)
+   - Indicates which payment gateway was used (Sadid, Stripe, PayPal, Cash)
+
+2. **PaymentProviderId** (nullable string)
+   - External payment ID from the payment provider
+
+3. **PaymentMetadata** (nullable string)
+   - JSON field for storing provider-specific metadata
+
+4. **PaymentStatus** enum has been extended with new values:
+   - Canceled = 2
+   - Refunded = 3
+   - Failed = 4
+
+## To Create and Apply the Migration
+
+Run the following commands from the Events project directory:
+
+```bash
+# Create the migration
+dotnet ef migrations add AddPaymentProviderFields
+
+# Apply the migration to the database
+dotnet ef database update
+```
+
+## Notes
+
+- Existing bills will have NULL values for the new fields
+- PaymentProvider will default to Sadid for backward compatibility in the code
+- The migration is backward compatible with existing data
+

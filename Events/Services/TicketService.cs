@@ -6,6 +6,7 @@ using Events.DATA.DTOs.Tickets;
 using Events.Entities;
 using Events.Entities.Book;
 using Events.Entities.Ticket;
+using Events.Services.Payment;
 using Microsoft.EntityFrameworkCore;
 
 namespace Events.Services;
@@ -36,16 +37,21 @@ public class TicketService : ITicketService
     private readonly DataContext _context;
     private readonly IMapper _mapper;
     private readonly ISeatIoService _seatIoService;
-    private readonly ISadidService _sadidService;
-    private readonly string _secretKey;
+    private readonly IPaymentGatewayFactory _paymentGatewayFactory;
+    private readonly ILogger<TicketService> _logger;
 
-    public TicketService(DataContext context, IMapper mapper, IConfiguration configuration, ISeatIoService seatIoService, ISadidService sadidService)
+    public TicketService(
+        DataContext context, 
+        IMapper mapper, 
+        ISeatIoService seatIoService,
+        IPaymentGatewayFactory paymentGatewayFactory,
+        ILogger<TicketService> logger)
     {
         _context = context;
         _mapper = mapper;
         _seatIoService = seatIoService;
-        _secretKey = configuration["sadid:ticket_key"];
-        _sadidService = sadidService;
+        _paymentGatewayFactory = paymentGatewayFactory;
+        _logger = logger;
     }
 
     public async Task<(Ticket? ticket, string? error)> ReleaseTicketAsync(Guid bookObjectId)
@@ -211,16 +217,25 @@ public class TicketService : ITicketService
             }).ToList();
 
         await _seatIoService.ChangeObjectStatusAsync(objectToChange, "free");
-        tickets.ForEach(x =>
+        
+        foreach (var ticket in tickets)
         {
-            _sadidService.ChangeBillState(x.BookObject?.Book?.Bill?.BillId, _secretKey, SadidService.SadidBillState.Canceled);
-            x.BookObject.IsCanceled = true;
-            x.BookObject.Book.TotalPrice -= x.BookObject.Price;
-        });
-
-
-
-        // TODO : Sadid cancel order
+            // Update bill status to canceled in database
+            var bill = ticket.BookObject?.Book?.Bill;
+            if (bill != null)
+            {
+                bill.PaymentStatus = PaymentStatus.Canceled;
+                
+                // Note: Amwal (PayTabs) cancellations must be handled through merchant dashboard
+                // The payment gateway does not provide API for cancellation
+                _logger.LogInformation("Ticket {TicketNumber} canceled. Bill {BillId} marked as canceled. " +
+                    "Manual cancellation may be required in PayTabs dashboard.", 
+                    ticket.Number, bill.BillId);
+            }
+            
+            ticket.BookObject.IsCanceled = true;
+            ticket.BookObject.Book.TotalPrice -= ticket.BookObject.Price;
+        }
 
         _context.Tickets.UpdateRange(tickets);
 

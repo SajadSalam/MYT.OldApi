@@ -6,6 +6,7 @@ using Events.Helpers.Hosted;
 using Events.Repository;
 using Events.Services;
 using Events.Helpers.OneSignal;
+using Events.Services.Payment;
 
 namespace Events.Extensions
 {
@@ -33,7 +34,12 @@ namespace Events.Extensions
             services.AddScoped<IPointOfSaleService , PointOfSaleService>();
             services.AddScoped<IEventFavoriteService , EventFavoriteService>();
             services.AddScoped<IStatisticService , StatisticService>();
-            services.AddHttpClient<ISadidService, SadidService>();
+            
+            // Payment Gateway Services
+            services.AddHttpClient<AmwalPaymentGateway>();
+            services.AddScoped<IPaymentGateway, AmwalPaymentGateway>();
+            services.AddScoped<IPaymentGatewayFactory, PaymentGatewayFactory>();
+            
             services.AddScoped<ITagService , TagService>();
             services.AddScoped<INotificationService , NotificationService>();
             services.AddScoped<ISupportMessageService ,SupportMessageService>();
