@@ -56,7 +56,7 @@ public class BookService : IBookService
 
     public async Task<(BookDto? state, string? error)> CreateBook(Guid eventId, Guid userId, ObjectForm objectForm)
     {
-        var user = await _context.Users.FindAsync(userId);
+            var user = await _context.Users.FindAsync(userId);
         if (user == null) throw new UnauthorizedAccessException("User Not Found");
 
         var transaction = await _context.Database.BeginTransactionAsync();
@@ -86,17 +86,21 @@ public class BookService : IBookService
             var categories = await _context.Categories.Where(x => x.ChartId == eventEntity.ChartId).ToListAsync();
             if (categories.Count == 0) return (null, "Categories not found");
 
-            var newObjects = objectForm.Objects.SelectMany(x =>
+            var newObjects = new List<BookObject>();
+            foreach (var x in objectForm.Objects)
             {
                 var obj = getObjectInfo.objs[x];
+                if (!Guid.TryParse(obj.CategoryKey, out var categoryId))
+                    return (null, $"Invalid category key for object '{x}': '{obj.CategoryKey}'");
+                var cat = categories.FirstOrDefault(y => y.Id == categoryId);
+                if (cat == null)
+                    return (null, $"Category not found for object '{x}' (key: {obj.CategoryKey})");
+
                 if (obj.ObjectType == "table")
                 {
-                    var objects = new List<BookObject>();
-
                     for (var i = 0; i < obj.NumSeats; i++)
                     {
-                        var cat = categories.FirstOrDefault(y => y.Id == Guid.Parse(obj.CategoryKey));
-                        objects.Add(new BookObject
+                        newObjects.Add(new BookObject
                         {
                             Name = $"{obj.Label}-{i + 1}",
                             FullName = objectForm.FullName,
@@ -106,26 +110,20 @@ public class BookService : IBookService
                             Type = obj.ObjectType,
                         });
                     }
-
-                    return objects;
                 }
                 else
                 {
-                    var cat = categories.FirstOrDefault(y => y.Id == Guid.Parse(obj.CategoryKey));
-                    return new List<BookObject>
+                    newObjects.Add(new BookObject
                     {
-                        new()
-                        {
-                            Name = obj.Label,
-                            FullName = objectForm.FullName,
-                            PhoneNumber = objectForm.PhoneNumber,
-                            CategoryId = cat.Id,
-                            Price = cat.Price,
-                            Type = obj.ObjectType
-                        }
-                    };
+                        Name = obj.Label,
+                        FullName = objectForm.FullName,
+                        PhoneNumber = objectForm.PhoneNumber,
+                        CategoryId = cat.Id,
+                        Price = cat.Price,
+                        Type = obj.ObjectType
+                    });
                 }
-            }).ToList();
+            }
 
             var totalPrice = newObjects.Sum(x => x.Price);
 

@@ -64,7 +64,7 @@ namespace Events.DATA
                         Id = Guid.NewGuid(),
                         FullName = "Super Admin",
                         PhoneNumber = "07709509877",
-                        Password = BCrypt.Net.BCrypt.HashPassword("123@root"),
+                            Password = BCrypt.Net.BCrypt.HashPassword("123@root"),
                         WorkspacePublicKey = "4a337713-31a9-454e-8d18-51bc555eb390",
                         WorkspaceSecretKey = "6e44c7c4-de85-495e-b7de-08f6fdc2b229",
                         Role = UserRole.Admin
